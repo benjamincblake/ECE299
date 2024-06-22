@@ -36,42 +36,132 @@ oled_spi = SPI( SPI_DEVICE, baudrate= 100000, sck= spi_sck, mosi= spi_sda )
 #
 oled = SSD1306_SPI( SCREEN_WIDTH, SCREEN_HEIGHT, oled_spi, spi_dc, spi_res, spi_cs, True )
 
-bttn = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
+DOWN = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
+SELECT = machine.Pin(1, machine.Pin.IN, machine.Pin.PULL_UP)
+UP = machine.Pin(2, machine.Pin.IN, machine.Pin.PULL_UP)
+SNOOZE = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
 
 # Assign a value to a variable
-Count = 0
+
 seconds = 0
 minutes = 0
 hours = 0
+time_format = 0
+Pm = False 
+morning = "AM"
+afternoon = "PM"
+twelveHrFormat = morning
 
 
 #inturrept handler function for the button, sleeps for 50ms for button debounce then increments count and re-enables interupt 
-def bttnhandler(x):
-        global Count
+def DOWNhandler(x):
         state = disable_irq()
-        utime.sleep_ms(50)
-        Count += 1
+        #down button handle
+        enable_irq(state)
+
+def SELECThandler(x):
+        state = disable_irq()
+        #select button handle
+        enable_irq(state)
+
+def UPhandler(x):
+        state = disable_irq()
+        #up button handle
+        enable_irq(state)
+
+def SNOOZEhandler(x):
+        state = disable_irq()
+        #snooze button handle
         enable_irq(state)
 
 #button ISR function call
-bttn.irq(trigger= machine.Pin.IRQ_RISING, handler = bttnhandler)
+DOWN.irq(trigger= machine.Pin.IRQ_RISING, handler = DOWNhandler)
+SELECT.irq(trigger= machine.Pin.IRQ_RISING, handler = SELECThandler)
+UP.irq(trigger= machine.Pin.IRQ_RISING, handler = UPhandler)
+SNOOZE.irq(trigger= machine.Pin.IRQ_RISING, handler = SNOOZEhandler)
 
-def clocktimer(timer):
+def clocktimer_24(timer):
     global seconds
     global minutes
     global hours
+    global Pm
+    global twelveHrFormat
     seconds += 1
-    if seconds == 60:
+    if seconds >= 60:
         minutes += 1
         seconds = 0
-    if minutes == 60:
+    if minutes >= 60:
         hours += 1
         minutes = 0
-    if hours == 13:
+    if hours >= 24:
+        hours = 0
+
+def clocktimer_12(timer):
+    global seconds
+    global minutes
+    global hours
+    global Pm
+    global twelveHrFormat
+    seconds += 1
+    if seconds >= 60:
+        minutes += 1
+        seconds = 0
+    if minutes >= 60:
+        hours += 1
+        minutes = 0
+    if hours == 12 and minutes == 0 and seconds == 0:
+        Pm = not Pm
+    if hours >= 13:
         hours = 1
+        
+soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer_24)
 
-soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer)
+def selectTimeFormat(time):
+    global hours
+    global time_format
+    global Pm
+    global soft_timer
+    
+    if time == 0:
+        time_format = 0
+        if not(Pm):
+            hours = 12 + hours
+            Pm = False
+        soft_timer.deinit()
+        soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer_24)
+        
+    else:
+        time_format = 1
+        Pm = False
+        if hours > 12:
+            hours = hours - 12
+            Pm = True
+        if hours == 0:
+            hours = 12
+        soft_timer.deinit()
+        soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer_12)
 
+def setTime_12(h,m,s,IsPM):
+    global seconds
+    global minutes
+    global hours
+    global Pm
+    
+    if time_format == 1:
+        seconds = s
+        minutes = m
+        hours = h
+        Pm = IsPM
+
+def setTime_24(h,m,s):
+    global seconds
+    global minutes
+    global hours
+    
+    if time_format == 0:
+        seconds = s
+        minutes = m
+        hours = h
 
 class Radio:
     
@@ -241,7 +331,7 @@ class Radio:
 #
 # initialize the FM radio
 #
-fm_radio = Radio( 100.3, 2, False )
+fm_radio = Radio( 101.9, 2, False )
 
 while ( True ):
     
@@ -255,8 +345,14 @@ while ( True ):
 #
     oled.text("Welcum to ECE", 0, 0) # Print the text starting from 0th column and 0th row
     oled.text("299", 45, 10) # Print the number 299 starting at 45th column and 10th row
-    oled.text("{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds), 0, 30 ) # Print the value stored in the variable Count. 
-        
+    if time_format == 0:
+        oled.text("{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds), 0, 30 )
+    else:
+        if Pm:
+            twelveHrFormat = afternoon
+        else:
+            twelveHrFormat = morning
+        oled.text("{:02d}:{:02d}:{:02d} {:02s}".format(hours, minutes, seconds, twelveHrFormat), 0, 30 )
 #
 # Draw box below the text
 #
