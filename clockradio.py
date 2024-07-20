@@ -36,10 +36,10 @@ oled_spi = SPI( SPI_DEVICE, baudrate= 100000, sck= spi_sck, mosi= spi_sda )
 #
 oled = SSD1306_SPI( SCREEN_WIDTH, SCREEN_HEIGHT, oled_spi, spi_dc, spi_res, spi_cs, True )
 
-DOWN = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
-SELECT = machine.Pin(1, machine.Pin.IN, machine.Pin.PULL_UP)
-UP = machine.Pin(2, machine.Pin.IN, machine.Pin.PULL_UP)
-SNOOZE = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
+DOWN = machine.Pin(1, machine.Pin.IN, machine.Pin.PULL_UP)
+SELECT = machine.Pin(2, machine.Pin.IN, machine.Pin.PULL_UP)
+UP = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
+SNOOZE = machine.Pin(4, machine.Pin.IN, machine.Pin.PULL_UP)
 
 # Assign a value to a variable
 
@@ -51,6 +51,13 @@ Pm = False
 morning = "AM"
 afternoon = "PM"
 twelveHrFormat = morning
+
+AlarmToggle = False
+AlarmIsTriggered = False
+AlarmSeconds = 0
+AlarmMinutes = 0
+AlarmHours = 0
+Alarm_PM = False
 
 
 #inturrept handler function for the button, sleeps for 50ms for button debounce then increments count and re-enables interupt 
@@ -86,6 +93,12 @@ def clocktimer_24(timer):
     global hours
     global Pm
     global twelveHrFormat
+    global AlarmToggle
+    global AlarmSeconds
+    global AlarmMinutes
+    global AlarmHours
+    global AlarmIsTriggered
+
     seconds += 1
     if seconds >= 60:
         minutes += 1
@@ -96,12 +109,23 @@ def clocktimer_24(timer):
     if hours >= 24:
         hours = 0
 
+    if AlarmToggle:
+        if hours == AlarmHours and minutes == AlarmMinutes and seconds == AlarmSeconds:
+            AlarmIsTriggered = True
+
 def clocktimer_12(timer):
     global seconds
     global minutes
     global hours
     global Pm
     global twelveHrFormat
+    global AlarmToggle
+    global AlarmSeconds
+    global AlarmMinutes
+    global AlarmHours
+    global AlarmIsTriggered
+    global Alarm_PM
+
     seconds += 1
     if seconds >= 60:
         minutes += 1
@@ -113,6 +137,10 @@ def clocktimer_12(timer):
         Pm = not Pm
     if hours >= 13:
         hours = 1
+    
+    if AlarmToggle:
+        if hours == AlarmHours and minutes == AlarmMinutes and seconds == AlarmSeconds and Pm == Alarm_PM:
+            AlarmIsTriggered = True
         
 soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer_24)
 
@@ -121,16 +149,27 @@ def selectTimeFormat(time):
     global time_format
     global Pm
     global soft_timer
+    global AlarmToggle
+    global AlarmSeconds
+    global AlarmMinutes
+    global AlarmHours
+    global Alarm_PM
+
     
-    if time == 0:
+    if time == 0 and time_format != 0:
         time_format = 0
         if not(Pm):
             hours = 12 + hours
             Pm = False
         soft_timer.deinit()
         soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer_24)
+
+        if AlarmToggle:
+            if not(Alarm_PM):
+                AlarmHours = 12 + AlarmHours
+                Alarm_PM = False
         
-    else:
+    if time == 1 and time_format != 1:
         time_format = 1
         Pm = False
         if hours > 12:
@@ -140,6 +179,14 @@ def selectTimeFormat(time):
             hours = 12
         soft_timer.deinit()
         soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer_12)
+
+        if AlarmToggle:
+            Alarm_PM = False
+            if AlarmHours > 12:
+                AlarmHours = AlarmHours - 12
+                Alarm_PM = True
+            if AlarmHours == 0:
+                AlarmHours = 12
 
 def setTime_12(h,m,s,IsPM):
     global seconds
@@ -163,6 +210,22 @@ def setTime_24(h,m,s):
         minutes = m
         hours = h
 
+def setAlarm(timeFormat,h,m,s,IsPM):
+    global AlarmToggle
+    global AlarmSeconds
+    global AlarmMinutes
+    global AlarmHours
+    global Alarm_PM
+
+    AlarmHours = h
+    AlarmMinutes = m
+    AlarmSeconds = s
+
+    if timeFormat == 1:
+        Alarm_PM = IsPM
+    
+    AlarmToggle = True 
+
 class Radio:
     
     def __init__( self, NewFrequency, NewVolume, NewMute ):
@@ -171,7 +234,7 @@ class Radio:
 # set the initial values of the radio
 #
         self.Volume = 2
-        self.Frequency = 88
+        self.Frequency = 101.9
         self.Mute = False
 #
 # Update the values with the ones passed in the initialization code
@@ -336,9 +399,29 @@ fm_radio = Radio( 101.9, 2, False )
 while ( True ):
     
 
+
+
+    if AlarmIsTriggered:
+        while AlarmIsTriggered:
+            oled.fill(0)
+            oled.text("BEEP BOOP", 0, 0)
+            oled.text("BEEP BOOP", 0, 10)
+            oled.text("BEEP BOOP", 0, 20)
+            oled.text("BEEP BOOP", 0, 30)
+            oled.text("BEEP BOOP", 0, 40)     
+            oled.text("BEEP BOOP", 0, 50)
+            oled.text("BEEP BOOP", 0, 60)  
+
+            oled.show()
+        
+        AlarmToggle = False
+
+
+
 # Clear the buffer
 #
     oled.fill(0)
+
         
 #
 # Update the text on the screen
@@ -353,10 +436,13 @@ while ( True ):
         else:
             twelveHrFormat = morning
         oled.text("{:02d}:{:02d}:{:02d} {:02s}".format(hours, minutes, seconds, twelveHrFormat), 0, 30 )
+
+    oled.text("{:02d}:{:02d}:{:02d}".format(AlarmHours, AlarmMinutes, AlarmSeconds), 0, 40 )
+
 #
 # Draw box below the text
 #
-    oled.rect( 0, 50, 128, 5, 1  )        
+    oled.rect( 0, 60, 128, 5, 1  )        
 
 #
 # Transfer the buffer to the screen
