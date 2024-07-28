@@ -70,6 +70,15 @@ snooze_last_tick = 0
 
 current_val = 0
 
+volume = 0
+
+radioON = True
+currState = 0
+menuState = 0
+alarmState = 0
+radioState = 0
+timeState = 0
+
 def tick_counter(timer):
     global tick
     tick += 1
@@ -86,9 +95,17 @@ def DOWNhandler(x):
 def SELECThandler(x):
     global tick
     global sel_last_tick
+    global AlarmIsTriggered
+    global currState
     state = disable_irq()
     if((tick - sel_last_tick) > 250):
         print("select")
+        if(AlarmIsTriggered):
+            AlarmIsTriggered = False
+        
+        elif currState == 0 and not AlarmIsTriggered:
+            currState = 1
+            rotary.set(0, 0, 1, 3, -1, None)
         sel_last_tick = tick
     enable_irq(state)
 
@@ -114,6 +131,7 @@ def SNOOZEhandler(x):
 
 rotary = RotaryIRQ(17, 18)
 
+rotary.set(1, -1, 2, 11, -2, None)
 
 
 #button ISR function call
@@ -121,10 +139,6 @@ DOWN.irq(trigger= machine.Pin.IRQ_RISING, handler = DOWNhandler)
 SELECT.irq(trigger= machine.Pin.IRQ_RISING, handler = SELECThandler)
 UP.irq(trigger= machine.Pin.IRQ_RISING, handler = UPhandler)
 SNOOZE.irq(trigger= machine.Pin.IRQ_RISING, handler = SNOOZEhandler)
-
-
-
-
 
 
 def clocktimer_24(timer):
@@ -283,6 +297,9 @@ def setAlarm(timeFormat,h,m,s,IsPM):
         Alarm_PM = IsPM
     
     AlarmToggle = True 
+
+selectTimeFormat(1)
+
 
 class Radio:
     
@@ -459,8 +476,18 @@ while ( True ):
     new_val = rotary.value()  # What is the encoder value right now?
     
     if current_val != new_val:  # The encoder value has changed!
-        print('Encoder value:', new_val)  # Do something with the new value
+        print(new_val)
+        if currState == 0:
+            volume = new_val
+            if volume > 11:
+                volume = 11
+            elif volume < 0:
+                volume = 0
+            else:
+                fm_radio.SetVolume(volume)
+                fm_radio.ProgramRadio()
         
+        print(fm_radio.GetSettings())
         current_val = new_val
 
 
@@ -507,23 +534,87 @@ while ( True ):
 #
 # Update the text on the screen
 #
-    oled.text("Welcum to ECE", 0, 0) # Print the text starting from 0th column and 0th row
-    oled.text("299", 45, 10) # Print the number 299 starting at 45th column and 10th row
-    if time_format == 0:
-        oled.text("{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds), 0, 30 )
-    else:
-        if Pm:
-            twelveHrFormat = afternoon
+    if currState == 0:
+        
+        #Speaker Icon
+        buffer1 = bytearray(b"\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\xc2\x01\x01\xc1\x01\x03\xc5\x00\x07\xc5\x80\x7f\xd6\x80o\xda\x80\x7f\xca\x80]\xca\x80\x7f\xda\x00\x7f\xd2\x80\x06\xd6\x80\x03\xc5\x80\x01\xc5\x00\x00\xc3\x01\x00@\x00\x00\x00\x00\x00\x00\x00")
+        fb1 = framebuf.FrameBuffer(buffer1, 20, 20, framebuf.MONO_HLSB)
+
+        #Radio Icon
+        buffer2 = bytearray(b"\x00\x00\x00\x0c\x03\x00\x1c\x03\x00\x1b\r\x806\x0e\x806\xe6\xc04\xf2\xc0$\xf2\xc04\xf2\xc04\xf6\xc06f\xc0\x13m\x80\x18a\x80\x0cc\x00\x00`\x00\x00`\x00\x00`\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        fb2 = framebuf.FrameBuffer(buffer2, 20, 20, framebuf.MONO_HLSB)
+                             #\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xc2\x00\x01\xc1\x00\x03\xc5\x00\x07\xc5\x80\x7f\xd6\x80o\xda\x80\x7f\xca\x80]\xca\x80\x7f\xda\x00\x7f\xd2\x80\x06\xd6\x80\x03\xc5\x80\x01\xc5\x00\x00\xc3\x00\x00@\x00\x00\x00\x00\x00\x00\x00
+
+        #Alarm
+        buffer3 = bytearray(b"\x00\x00\x00\x1c\x03\x80x\x01\xe0`\x00`\xce\x070\xcc\x030\xd8a\xb0\x18\xf1\x80\x01\xf8\x00\x03\xfc\x00\x03\xfc\x00\x03\xfc\x00\x03\xfc\x00\x07\xfe\x00\x0f\xff\x00\x0f\xff\x00\x00\x00\x00\x00`\x00\x00`\x00\x00\x00\x00")
+        fb3 = framebuf.FrameBuffer(buffer3, 20, 20, framebuf.MONO_HLSB)
+        
+        if time_format == 0:
+            oled.text("{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds), 0, 0 )
         else:
-            twelveHrFormat = morning
-        oled.text("{:02d}:{:02d}:{:02d} {:02s}".format(hours, minutes, seconds, twelveHrFormat), 0, 30 )
+            if Pm:
+                twelveHrFormat = afternoon
+            else:
+                twelveHrFormat = morning
+            oled.text("{:02d}:{:02d}:{:02d}{:02s}".format(hours, minutes, seconds, twelveHrFormat), 0, 0 )
+        if AlarmToggle:
+            oled.text("Alarm:",0, 10)
+            
+            if time_format == 0:
+                oled.text("{:02d}:{:02d}:{:02d}".format(AlarmHours, AlarmMinutes, AlarmSeconds), 47, 10 )
+            else:
+                if Pm:
+                    twelveHrFormat = afternoon
+                else:
+                    twelveHrFormat = morning
+                    oled.text("{:02d}:{:02d}:{:02d}{:02s}".format(AlarmHours, AlarmMinutes, AlarmSeconds, twelveHrFormat), 47, 10 )
+            oled.blit(fb3, 46, 45)
+        else:
+            oled.text("No Alarm Set", 0, 10)
+        
+        
+        if radioON:
+            oled.blit(fb2, 24, 45)
+        
+        oled.text("Station:", 0, 20)
+        oled.text(str(fm_radio.GetSettings()[2]), 65, 20)
+        oled.text("FM", 105,20)
+        
+        
 
-    oled.text("{:02d}:{:02d}:{:02d}".format(AlarmHours, AlarmMinutes, AlarmSeconds), 0, 40 )
-
+        # oled.blit(fb0, 1, 1)
+        oled.blit(fb1, 1, 44)
+    
+    if currState == 1:
+        trueybuf = bytearray(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x08\x00\x1c\x0e\x00|\x0f\x80|\x0f\x00\x0c\x0c\x00\x0e\x0c\x00\x0e\x1c\x00\x0f<\x00\x07\xfc\x00\x07\xf8\x00\x01\xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        truey = framebuf.FrameBuffer(trueybuf, 18,18, framebuf.MONO_HLSB)
+        
+        
+        
+        oled.text("Time", 30, 5)
+        oled.text("Alarm", 30, 20)
+        oled.text("Radio", 30, 35)
+        oled.text("Back", 30, 50)
+        
+        if menuState == 0:
+            oled.blit(truey, 0, 0)
+            
+        if menuState == 1:
+            oled.blit(truey, 0, 15)
+            
+        if menuState == 2:
+            oled.blit(truey, 0, 30)
+            
+        if menuState == 3:
+            oled.blit(truey, 0, 45)
+    
+        
+        
+        
 #
 # Draw box below the text
 #
-    oled.rect( 0, 60, 128, 5, 1  )        
+            
 
 #
 # Transfer the buffer to the screen
@@ -610,3 +701,4 @@ while ( True ):
 
 #     else:
 #         print( "Invalid menu option" )
+
