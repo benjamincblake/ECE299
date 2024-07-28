@@ -1,6 +1,8 @@
 from machine import Pin, I2C, SPI, disable_irq, enable_irq,Timer  # SPI is a class associated with the machine library. 
 import time
 import utime
+from rotary_irq_rp2 import RotaryIRQ
+
 
 
 # The below specified libraries have to be included. Also, ssd1306.py must be saved on the Pico. 
@@ -36,10 +38,11 @@ oled_spi = SPI( SPI_DEVICE, baudrate= 100000, sck= spi_sck, mosi= spi_sda )
 #
 oled = SSD1306_SPI( SCREEN_WIDTH, SCREEN_HEIGHT, oled_spi, spi_dc, spi_res, spi_cs, True )
 
-DOWN = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
-SELECT = machine.Pin(1, machine.Pin.IN, machine.Pin.PULL_UP)
-UP = machine.Pin(2, machine.Pin.IN, machine.Pin.PULL_UP)
-SNOOZE = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
+DOWN = machine.Pin(1, machine.Pin.IN, machine.Pin.PULL_UP)
+SELECT = machine.Pin(2, machine.Pin.IN, machine.Pin.PULL_UP)
+UP = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
+SNOOZE = machine.Pin(4, machine.Pin.IN, machine.Pin.PULL_UP)
+ROTARY_BUTTON = machine.Pin(16, machine.Pin.IN, machine.Pin.PULL_UP)
 
 # Assign a value to a variable
 
@@ -61,6 +64,18 @@ Alarm_PM = False
 isSnoozed = False
 snoozeTimer = 0
 
+tick = 0
+sel_last_tick = 0
+snooze_last_tick = 0
+
+current_val = 0
+
+def tick_counter(timer):
+    global tick
+    tick += 1
+
+test_timer = Timer(mode=Timer.PERIODIC, period=1, callback=tick_counter)
+
 
 #inturrept handler function for the button, sleeps for 50ms for button debounce then increments count and re-enables interupt 
 def DOWNhandler(x):
@@ -69,8 +84,12 @@ def DOWNhandler(x):
     enable_irq(state)
 
 def SELECThandler(x):
+    global tick
+    global sel_last_tick
     state = disable_irq()
-    #up button handle
+    if((tick - sel_last_tick) > 250):
+        print("select")
+        sel_last_tick = tick
     enable_irq(state)
 
 def UPhandler(x):
@@ -81,16 +100,32 @@ def UPhandler(x):
 def SNOOZEhandler(x):
     global AlarmIsTriggered
     global isSnoozed
+    global tick
+    global snooze_last_tick
     state = disable_irq()
-    if(AlarmIsTriggered):
-        isSnoozed = True
+    if((tick - snooze_last_tick) > 200):
+        print("snooze")
+        if(AlarmIsTriggered):
+            isSnoozed = True
+            AlarmIsTriggered = False
+        snooze_last_tick = tick
     enable_irq(state)
+    
+
+rotary = RotaryIRQ(17, 18)
+
+
 
 #button ISR function call
 DOWN.irq(trigger= machine.Pin.IRQ_RISING, handler = DOWNhandler)
 SELECT.irq(trigger= machine.Pin.IRQ_RISING, handler = SELECThandler)
 UP.irq(trigger= machine.Pin.IRQ_RISING, handler = UPhandler)
 SNOOZE.irq(trigger= machine.Pin.IRQ_RISING, handler = SNOOZEhandler)
+
+
+
+
+
 
 def clocktimer_24(timer):
     global seconds
@@ -421,7 +456,12 @@ fm_radio = Radio( 101.9, 2, False )
 
 while ( True ):
     
-
+    new_val = rotary.value()  # What is the encoder value right now?
+    
+    if current_val != new_val:  # The encoder value has changed!
+        print('Encoder value:', new_val)  # Do something with the new value
+        
+        current_val = new_val
 
 
     if AlarmIsTriggered:
