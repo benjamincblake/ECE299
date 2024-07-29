@@ -1,4 +1,4 @@
-from machine import Pin, I2C, SPI, disable_irq, enable_irq,Timer  # SPI is a class associated with the machine library. 
+from machine import Pin, I2C, SPI, disable_irq, enable_irq,Timer,PWM  # SPI is a class associated with the machine library. 
 import time
 import utime
 from rotary_irq_rp2 import RotaryIRQ
@@ -44,6 +44,8 @@ UP = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
 SNOOZE = machine.Pin(4, machine.Pin.IN, machine.Pin.PULL_UP)
 ROTARY_BUTTON = machine.Pin(16, machine.Pin.IN, machine.Pin.PULL_UP)
 
+AlarmPWM = PWM(Pin(0, mode=Pin.OUT))
+
 # Assign a value to a variable
 
 seconds = 0
@@ -79,6 +81,11 @@ alarmState = 0
 radioState = 0
 timeState = 0
 
+hourScroll = 0
+hourSelect = False
+formatSelect = 0
+minuteScroll = 0
+
 def tick_counter(timer):
     global tick
     tick += 1
@@ -97,15 +104,83 @@ def SELECThandler(x):
     global sel_last_tick
     global AlarmIsTriggered
     global currState
+    global menuState
+    global timeState
+    global time_format
+    global hourSelect
+    global formatSelect
+    global hourScroll
+    global minuteScroll
+    
     state = disable_irq()
     if((tick - sel_last_tick) > 250):
         print("select")
         if(AlarmIsTriggered):
             AlarmIsTriggered = False
         
-        elif currState == 0 and not AlarmIsTriggered:
+        elif currState == 0:
+            menuState = 0
             currState = 1
-            rotary.set(0, 0, 1, 3, -1, None)
+            rotary.set(0, 0, 1, 3, None, None)
+            
+        elif currState == 1:
+            if menuState == 0:
+                timeState = 0
+                currState = 2
+                rotary.set(0, 0, 1, 2, None, None)
+                
+            elif menuState == 1:
+                currState = 3
+                
+            elif menuState == 2:
+                currState = 4
+                
+            else:
+                currState = 0
+        
+        elif currState == 2:
+            if timeState == 0:
+                hourScroll = 0
+                minuteScroll = 0
+                currState = 5
+                if time_format == 0:
+                    rotary.set(0, 0, 1, 23, None, None)
+                else:
+                    rotary.set(1, 0, 1, 12, None, None)
+                
+            elif timeState == 1:
+                if time_format == 0:
+                    selectTimeFormat(1)
+                else:
+                    selectTimeFormat(0)
+            else:
+                menuState = 0
+                currState = 1
+        
+        elif currState == 5:
+            if time_format == 0:
+                rotary.set(0, 0, 1, 59, None, None)
+                currState = 6
+            elif not hourSelect:
+                rotary.set(0, 0, 1, 1, None, None)
+                hourSelect = True
+            else:
+                currState = 6
+                rotary.set(0, 0, 1, 59, None, None)
+        
+        elif currState == 6:
+            if time_format == 1:
+                if formatSelect == 1:
+                    setTime_12(hourScroll,minuteScroll,0,True)
+                else:
+                    setTime_12(hourScroll,minuteScroll,0,False)
+            else:
+                setTime_24(hourScroll,minuteScroll,0)
+            
+            currState = 2
+            timeState = 0
+            rotary.set(0, 0, 1, 2, None, None)
+            
         sel_last_tick = tick
     enable_irq(state)
 
@@ -131,7 +206,7 @@ def SNOOZEhandler(x):
 
 rotary = RotaryIRQ(17, 18)
 
-rotary.set(1, -1, 2, 11, -2, None)
+rotary.set(0, 0, 1, 9, None, None)
 
 
 #button ISR function call
@@ -395,6 +470,9 @@ class Radio:
             return( False )
         
         return( True )
+    
+    def ToggleMute(self, state):
+        self.Mute = state
 
 #
 # convert the frequency to 10 bit value for the radio chip
@@ -471,6 +549,20 @@ class Radio:
 #
 fm_radio = Radio( 101.9, 2, False )
 
+utime.sleep(1)
+
+#fm_radio = Radio( 101.9, 2, True )
+
+#AlarmPWM.freq(500)
+#AlarmPWM.duty_u16(50000)
+
+#utime.sleep(1)
+
+#AlarmPWM.duty_u16(0)
+#fm_radio = Radio( 101.9, 2, False )
+
+
+
 while ( True ):
     
     new_val = rotary.value()  # What is the encoder value right now?
@@ -479,13 +571,76 @@ while ( True ):
         print(new_val)
         if currState == 0:
             volume = new_val
-            if volume > 11:
-                volume = 11
+            if volume > 9:
+                volume = 9
+                rotary.set(9, 0, 1, 9, None, None)
             elif volume < 0:
                 volume = 0
+                rotary.set(0, 0, 1, 9, None, None)
             else:
                 fm_radio.SetVolume(volume)
                 fm_radio.ProgramRadio()
+        
+        if currState == 1:
+            menuState = new_val
+            if menuState > 3:
+                menuState = 3
+                rotary.set(3, 0, 1, 3, None, None)
+                
+            if menuState < 0:
+                menuState = 0
+                rotary.set(0, 0, 1, 3, None, None)
+        
+        if currState == 2:
+            timeState = new_val
+            if timeState > 2:
+                menuState = 2
+                rotary.set(2, 0, 1, 2, None, None)
+                
+            if timeState < 0:
+                menuState = 0
+                rotary.set(0, 0, 1, 2, None, None)
+                
+        if currState == 5:
+            if hourSelect:
+                formatSelect = new_val
+                if formatSelect > 1:
+                    formatSelect = 1
+                    rotary.set(1, 0, 1, 1, None, None)
+                
+                if formatSelect < 0:
+                    formatSelect = 0
+                    rotary.set(0, 0, 1, 1, None, None)
+                
+            elif time_format == 1:
+                hourScroll = new_val
+                if hourScroll > 12:
+                    hourScroll = 12
+                    rotary.set(12, 0, 1, 12, None, None)
+                
+                if hourScroll < 1:
+                    hourScroll = 1
+                    rotary.set(1, 0, 1, 12, None, None)
+            else:
+                hourScroll = new_val
+                if hourScroll > 23:
+                    hourScroll = 23
+                    rotary.set(23, 0, 1, 23, None, None)
+                
+                if hourScroll < 0:
+                    hourScroll = 0
+                    rotary.set(0, 0, 1, 23, None, None)
+        
+        if currState == 6:
+            minuteScroll = new_val
+            if minuteScroll > 59:
+                minuteScroll = 59
+                rotary.set(59, 0, 1, 59, None, None)
+                
+            if minuteScroll < 0:
+                minuteScroll = 0
+                rotary.set(0, 0, 1, 59, None, None)
+                
         
         print(fm_radio.GetSettings())
         current_val = new_val
@@ -608,9 +763,44 @@ while ( True ):
         if menuState == 3:
             oled.blit(truey, 0, 45)
     
+    if currState == 2:
+        trueybuf = bytearray(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x08\x00\x1c\x0e\x00|\x0f\x80|\x0f\x00\x0c\x0c\x00\x0e\x0c\x00\x0e\x1c\x00\x0f<\x00\x07\xfc\x00\x07\xf8\x00\x01\xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        truey = framebuf.FrameBuffer(trueybuf, 18,18, framebuf.MONO_HLSB)
         
         
+        oled.text("Set Time", 30, 5)
+        oled.text("Format:", 30, 20)
+        if time_format == 0:
+            oled.text("24H", 90, 20)
+        else:
+            oled.text("12H", 90, 20)
+        oled.text("Back", 30, 35)
         
+        if timeState == 0:
+            oled.blit(truey, 0, 0)
+            
+        if timeState == 1:
+            oled.blit(truey, 0, 15)
+            
+        if timeState == 2:
+            oled.blit(truey, 0, 30)
+            
+    
+    if currState == 5:
+        oled.text("Select Hour:", 0 ,0)
+        if time_format == 0:
+            oled.text("{:02d}".format(hourScroll), 0, 20 )
+        else:
+            oled.text("{:02d}".format(hourScroll), 0, 20 )
+            if formatSelect == 0:
+                oled.text("AM", 15, 20)
+            else:
+                oled.text("PM", 15, 20)
+    
+    if currState == 6:
+        oled.text("Select Minute:", 0 ,0)
+        oled.text("{:02d}".format(minuteScroll), 0, 20 )
+    
 #
 # Draw box below the text
 #
