@@ -45,6 +45,7 @@ SNOOZE = machine.Pin(4, machine.Pin.IN, machine.Pin.PULL_UP)
 ROTARY_BUTTON = machine.Pin(16, machine.Pin.IN, machine.Pin.PULL_UP)
 
 AlarmPWM = PWM(Pin(0, mode=Pin.OUT))
+AlarmPWM.freq(500)
 
 # Assign a value to a variable
 
@@ -74,7 +75,7 @@ current_val = 0
 
 volume = 0
 
-radioON = True
+radioMute = True
 currState = 0
 menuState = 0
 alarmState = 0
@@ -85,6 +86,20 @@ hourScroll = 0
 hourSelect = False
 formatSelect = 0
 minuteScroll = 0
+
+alarmFreqScroll = 4
+alarmDutyScroll = 1
+AlarmDuty = 49152
+snoozeScroll = 5
+snoozeLength = 15
+
+radioScroll = 101.9
+currentStation = 101.9
+
+volumeScroll = 1
+currentVolume = 2
+
+
 
 def tick_counter(timer):
     global tick
@@ -103,6 +118,9 @@ def SELECThandler(x):
     global tick
     global sel_last_tick
     global AlarmIsTriggered
+    global AlarmToggle
+    global AlarmMinutes
+    global AlarmHours
     global currState
     global menuState
     global timeState
@@ -111,12 +129,29 @@ def SELECThandler(x):
     global formatSelect
     global hourScroll
     global minuteScroll
+    global alarmState
+    global alarmFreqScroll
+    global alarmDutyScroll
+    global AlarmPWM
+    global AlarmDuty
+    global snoozeScroll
+    global snoozeLength
+    global fm_radio
+    global radioMute
+    global radioState
+    global radioScroll
+    global currentStation
+    global volumeScroll
+    global currentVolume
     
     state = disable_irq()
     if((tick - sel_last_tick) > 250):
         print("select")
         if(AlarmIsTriggered):
             AlarmIsTriggered = False
+            AlarmPWM.duty_u16(0)
+            fm_radio = Radio(currentStation, currentVolume, radioMute)
+            
         
         elif currState == 0:
             menuState = 0
@@ -130,23 +165,28 @@ def SELECThandler(x):
                 rotary.set(0, 0, 1, 2, None, None)
                 
             elif menuState == 1:
+                alarmState = 0
                 currState = 3
+                rotary.set(0, 0, 1, 3, None, None)
                 
             elif menuState == 2:
+                radioState = 0
                 currState = 4
+                rotary.set(0, 0, 1, 3, None, None)
                 
             else:
                 currState = 0
         
         elif currState == 2:
             if timeState == 0:
-                hourScroll = 0
+                hourScroll = 1
                 minuteScroll = 0
+                hourSelect = False
                 currState = 5
                 if time_format == 0:
                     rotary.set(0, 0, 1, 23, None, None)
                 else:
-                    rotary.set(1, 0, 1, 12, None, None)
+                    rotary.set(1, 1, 1, 12, None, None)
                 
             elif timeState == 1:
                 if time_format == 0:
@@ -154,8 +194,65 @@ def SELECThandler(x):
                 else:
                     selectTimeFormat(0)
             else:
+                rotary.set(0, 0, 1, 3, None, None)
                 menuState = 0
                 currState = 1
+                
+        elif currState == 3:
+            if alarmState == 0:
+                if AlarmToggle:
+                    AlarmToggle = False
+                else:
+                    AlarmToggle = True
+                    if AlarmHours == 0 and AlarmMinutes == 0 and time_format == 1:
+                        setAlarm(1,12,0,0,False)
+                        
+                
+            elif alarmState == 1:
+                hourScroll = 0
+                minuteScroll = 0
+                hourSelect = False
+                currState = 7
+                if time_format == 0:
+                    rotary.set(0, 0, 1, 23, None, None)
+                else:
+                    rotary.set(1, 0, 1, 12, None, None)
+                
+            elif alarmState == 2:
+                currState = 9
+                alarmFreqScroll = 4
+                alarmDutyScroll = 1
+                rotary.set(4, 4, 1, 7, None, None)
+                
+            else:
+                rotary.set(0, 0, 1, 3, None, None)
+                menuState = 0
+                currState = 1
+        
+        elif currState == 4:
+            if radioState == 0:
+                if radioMute:
+                    radioMute = False
+                else:
+                    radioMute = True
+                fm_radio = Radio(currentStation, currentVolume, radioMute)
+            
+            elif radioState == 1:
+                radioScroll = 101.9
+                currState = 12
+                rotary.set(101.9, 88.0, 0.1, 108.0, None, None)
+                
+                
+            elif radioState == 2:
+                volumeScroll = 1
+                currState = 13
+                rotary.set(1, 1, 1, 10, None, None)
+            
+            else:
+                rotary.set(0, 0, 1, 3, None, None)
+                menuState = 0
+                currState = 1
+                    
         
         elif currState == 5:
             if time_format == 0:
@@ -176,10 +273,74 @@ def SELECThandler(x):
                     setTime_12(hourScroll,minuteScroll,0,False)
             else:
                 setTime_24(hourScroll,minuteScroll,0)
-            
+        
             currState = 2
             timeState = 0
             rotary.set(0, 0, 1, 2, None, None)
+        
+        elif currState == 7:
+            if time_format == 0:
+                rotary.set(0, 0, 1, 59, None, None)
+                currState = 8
+            elif not hourSelect:
+                rotary.set(0, 0, 1, 1, None, None)
+                hourSelect = True
+            else:
+                currState = 8
+                rotary.set(0, 0, 1, 59, None, None)
+        
+        elif currState == 8:
+            if time_format == 1:
+                if formatSelect == 1:
+                    setAlarm(1,hourScroll,minuteScroll,0,True)
+                else:
+                    setAlarm(1,hourScroll,minuteScroll,0,False)
+            else:
+                setAlarm(0,hourScroll,minuteScroll,0, False)
+        
+            currState = 3
+            AlarmState = 0
+            rotary.set(0, 0, 1, 3, None, None)
+        
+        elif currState == 9:
+            currState = 10
+            rotary.set(1, 1, 1, 4, None, None)
+        
+        elif currState == 10:
+            AlarmPWM.freq(alarmFreqScroll*100)
+            if alarmDutyScroll == 4:
+                AlarmDuty = 16384
+            if alarmDutyScroll == 3:
+                AlarmDuty = 32768
+            if alarmDutyScroll == 2:
+                AlarmDuty = 49152
+            if alarmDutyScroll == 1:
+                AlarmDuty = 65535
+            
+            currState = 11
+            snoozeScroll = 5
+            rotary.set(5, 5, 5, 600, None, None)
+            
+        elif currState == 11:
+            
+            snoozeLength = snoozeScroll
+            currState = 3
+            AlarmState = 0
+            rotary.set(0, 0, 1, 3, None, None)
+            
+        elif currState == 12:
+            currentStation = radioScroll
+            fm_radio = Radio(currentStation, currentVolume, radioMute)
+            radioState = 0
+            currState = 4
+            rotary.set(0, 0, 1, 3, None, None)
+            
+        elif currState == 13:
+            currentVolume = volumeScroll
+            fm_radio = Radio(currentStation, currentVolume, radioMute)
+            radioState = 0
+            currState = 4
+            rotary.set(0, 0, 1, 3, None, None)
             
         sel_last_tick = tick
     enable_irq(state)
@@ -194,12 +355,19 @@ def SNOOZEhandler(x):
     global isSnoozed
     global tick
     global snooze_last_tick
+    global radioMute
+    global fm_radio
+    global currentStation
+    global currentVolume
     state = disable_irq()
     if((tick - snooze_last_tick) > 200):
         print("snooze")
         if(AlarmIsTriggered):
             isSnoozed = True
             AlarmIsTriggered = False
+            AlarmPWM.duty_u16(0)
+            fm_radio = Radio(currentStation, currentVolume, radioMute)
+            
         snooze_last_tick = tick
     enable_irq(state)
     
@@ -229,6 +397,12 @@ def clocktimer_24(timer):
     global AlarmIsTriggered
     global isSnoozed
     global snoozeTimer
+    global snoozeLength
+    global AlarmDuty
+    global fm_radio
+    global AlarmPWM
+    global currentStation
+    global currentVolume
 
     seconds += 1
     if seconds >= 60:
@@ -243,13 +417,19 @@ def clocktimer_24(timer):
     if AlarmToggle:
         if hours == AlarmHours and minutes == AlarmMinutes and seconds == AlarmSeconds:
             AlarmIsTriggered = True
+            fm_radio = Radio(currentStation, currentVolume, True)
+            AlarmPWM.duty_u16(AlarmDuty)
+            
 
         if(isSnoozed):
             snoozeTimer += 1
         
-        if(snoozeTimer == 15):
+        if(snoozeTimer == snoozeLength):
             snoozeTimer = 0
             AlarmIsTriggered = True
+            isSnoozed = False
+            fm_radio = Radio(currentStation, currentVolume, True)
+            AlarmPWM.duty_u16(AlarmDuty)
 
 def clocktimer_12(timer):
     global seconds
@@ -265,6 +445,12 @@ def clocktimer_12(timer):
     global Alarm_PM
     global isSnoozed
     global snoozeTimer
+    global snoozeLength
+    global AlarmDuty
+    global fm_radio
+    global AlarmPWM
+    global currentStation
+    global currentVolume
 
     seconds += 1
     if seconds >= 60:
@@ -281,13 +467,18 @@ def clocktimer_12(timer):
     if AlarmToggle:
         if hours == AlarmHours and minutes == AlarmMinutes and seconds == AlarmSeconds and Pm == Alarm_PM:
             AlarmIsTriggered = True
+            fm_radio = Radio(currentStation, currentVolume, True)
+            AlarmPWM.duty_u16(AlarmDuty)
         
         if(isSnoozed):
             snoozeTimer += 1
         
-        if(snoozeTimer == 15):
+        if(snoozeTimer == snoozeLength):
             snoozeTimer = 0
+            isSnoozed = False
             AlarmIsTriggered = True
+            fm_radio = Radio(currentStation, currentVolume, True)
+            AlarmPWM.duty_u16(AlarmDuty)
 
 soft_timer = Timer(mode=Timer.PERIODIC, period=1000, callback=clocktimer_24)
 
@@ -547,14 +738,9 @@ class Radio:
 #
 # initialize the FM radio
 #
-fm_radio = Radio( 101.9, 2, False )
+fm_radio = Radio(currentStation, currentVolume, radioMute)
 
 utime.sleep(1)
-
-#fm_radio = Radio( 101.9, 2, True )
-
-#AlarmPWM.freq(500)
-#AlarmPWM.duty_u16(50000)
 
 #utime.sleep(1)
 
@@ -568,18 +754,6 @@ while ( True ):
     new_val = rotary.value()  # What is the encoder value right now?
     
     if current_val != new_val:  # The encoder value has changed!
-        print(new_val)
-        if currState == 0:
-            volume = new_val
-            if volume > 9:
-                volume = 9
-                rotary.set(9, 0, 1, 9, None, None)
-            elif volume < 0:
-                volume = 0
-                rotary.set(0, 0, 1, 9, None, None)
-            else:
-                fm_radio.SetVolume(volume)
-                fm_radio.ProgramRadio()
         
         if currState == 1:
             menuState = new_val
@@ -601,7 +775,28 @@ while ( True ):
                 menuState = 0
                 rotary.set(0, 0, 1, 2, None, None)
                 
-        if currState == 5:
+        if currState == 3:
+            alarmState = new_val
+            if alarmState > 3:
+                alarmState = 3
+                rotary.set(3, 0, 1, 3, None, None)
+                
+            if alarmState < 0:
+                alarmState = 0
+                rotary.set(0, 0, 1, 3, None, None)
+        
+        if currState == 4:
+            radioState = new_val
+            if radioState > 3:
+                radioState = 3
+                rotary.set(3, 0, 1, 3, None, None)
+                
+            if radioState < 0:
+                radioState = 0
+                rotary.set(0, 0, 1, 3, None, None)
+                
+                
+        if currState == 5 or currState == 7:
             if hourSelect:
                 formatSelect = new_val
                 if formatSelect > 1:
@@ -616,11 +811,11 @@ while ( True ):
                 hourScroll = new_val
                 if hourScroll > 12:
                     hourScroll = 12
-                    rotary.set(12, 0, 1, 12, None, None)
+                    rotary.set(12, 1, 1, 12, None, None)
                 
                 if hourScroll < 1:
                     hourScroll = 1
-                    rotary.set(1, 0, 1, 12, None, None)
+                    rotary.set(1, 1, 1, 12, None, None)
             else:
                 hourScroll = new_val
                 if hourScroll > 23:
@@ -631,7 +826,7 @@ while ( True ):
                     hourScroll = 0
                     rotary.set(0, 0, 1, 23, None, None)
         
-        if currState == 6:
+        if currState == 6 or currState == 8:
             minuteScroll = new_val
             if minuteScroll > 59:
                 minuteScroll = 59
@@ -640,7 +835,58 @@ while ( True ):
             if minuteScroll < 0:
                 minuteScroll = 0
                 rotary.set(0, 0, 1, 59, None, None)
+        
+        if currState == 9:
+            alarmFreqScroll = new_val
+            if alarmFreqScroll > 7:
+                alarmFreqScroll = 7
+                rotary.set(7, 4, 1, 7, None, None)
                 
+            if alarmFreqScroll < 4:
+                alarmFreqScroll = 4
+                rotary.set(4, 4, 1, 7, None, None)
+        
+        if currState == 10:
+            alarmDutyScroll = new_val
+            if alarmDutyScroll > 4:
+                alarmDutyScroll = 4
+                rotary.set(4, 1, 1, 4, None, None)
+                
+            if alarmDutyScroll < 1:
+                alarmDutyScroll = 1
+                rotary.set(1, 1, 1, 4, None, None)
+        
+        if currState == 11:
+            snoozeScroll = new_val
+            if snoozeScroll > 600:
+                snoozeScroll = 600
+                rotary.set(600, 5, 5, 600, None, None)
+            
+            if snoozeScroll < 5:
+                snoozeScroll = 5
+                rotary.set(5, 5, 5, 600, None, None)
+        
+        if currState == 12:
+            radioScroll = new_val
+            
+            if radioScroll > 108.0:
+                radioScroll = 108.0
+                rotary.set(108.0, 88.0, 0.1, 108.0, None, None)
+            
+            if radioScroll < 88.0:
+                radioScroll = 88.0
+                rotary.set(88.0, 88.0, 0.1, 108.0, None, None)
+                
+        if currState == 13:
+            volumeScroll = new_val
+            
+            if volumeScroll > 10:
+                volumeScroll = 10
+                rotary.set(1, 1, 1, 10, None, None)
+            
+            if volumeScroll < 1:
+                volumeScroll = 1
+                rotary.set(1, 1, 1, 10, None, None)
         
         print(fm_radio.GetSettings())
         current_val = new_val
@@ -716,24 +962,26 @@ while ( True ):
             oled.text("Alarm:",0, 10)
             
             if time_format == 0:
-                oled.text("{:02d}:{:02d}:{:02d}".format(AlarmHours, AlarmMinutes, AlarmSeconds), 47, 10 )
+                oled.text("{:02d}:{:02d}".format(AlarmHours, AlarmMinutes), 47, 10 )
             else:
                 if Pm:
                     twelveHrFormat = afternoon
                 else:
                     twelveHrFormat = morning
-                    oled.text("{:02d}:{:02d}:{:02d}{:02s}".format(AlarmHours, AlarmMinutes, AlarmSeconds, twelveHrFormat), 47, 10 )
+                    oled.text("{:02d}:{:02d}{:02s}".format(AlarmHours, AlarmMinutes,twelveHrFormat), 47, 10 )
             oled.blit(fb3, 46, 45)
         else:
             oled.text("No Alarm Set", 0, 10)
         
         
-        if radioON:
+        if not radioMute:
             oled.blit(fb2, 24, 45)
         
         oled.text("Station:", 0, 20)
         oled.text(str(fm_radio.GetSettings()[2]), 65, 20)
         oled.text("FM", 105,20)
+        
+        oled.text("Vol:{:02d}, Stereo".format(currentVolume), 0, 30)
         
         
 
@@ -784,9 +1032,58 @@ while ( True ):
             
         if timeState == 2:
             oled.blit(truey, 0, 30)
-            
     
-    if currState == 5:
+    if currState == 3:
+        trueybuf = bytearray(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x08\x00\x1c\x0e\x00|\x0f\x80|\x0f\x00\x0c\x0c\x00\x0e\x0c\x00\x0e\x1c\x00\x0f<\x00\x07\xfc\x00\x07\xf8\x00\x01\xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        truey = framebuf.FrameBuffer(trueybuf, 18,18, framebuf.MONO_HLSB)
+        
+        oled.text("Toggle:", 30, 5)
+        if AlarmToggle:
+            oled.text("ON", 90, 5)
+        else:
+            oled.text("OFF", 90, 5)
+        oled.text("Set Time", 30, 20)
+        oled.text("Customize", 30, 35)
+        oled.text("Back", 30, 50)
+        
+        if alarmState == 0:
+            oled.blit(truey, 0, 0)
+            
+        if alarmState == 1:
+            oled.blit(truey, 0, 15)
+            
+        if alarmState == 2:
+            oled.blit(truey, 0, 30)
+            
+        if alarmState == 3:
+            oled.blit(truey, 0, 45)
+        
+    if currState == 4:
+        trueybuf = bytearray(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x08\x00\x1c\x0e\x00|\x0f\x80|\x0f\x00\x0c\x0c\x00\x0e\x0c\x00\x0e\x1c\x00\x0f<\x00\x07\xfc\x00\x07\xf8\x00\x01\xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        truey = framebuf.FrameBuffer(trueybuf, 18,18, framebuf.MONO_HLSB)
+        
+        oled.text("Mute:", 30, 5)
+        if radioMute:
+            oled.text("ON", 75, 5)
+        else:
+            oled.text("OFF", 75, 5)
+        oled.text("Set Freq", 30, 20)
+        oled.text("Volume", 30, 35)
+        oled.text("Back", 30, 50)
+        
+        if radioState == 0:
+            oled.blit(truey, 0, 0)
+            
+        if radioState == 1:
+            oled.blit(truey, 0, 15)
+            
+        if radioState == 2:
+            oled.blit(truey, 0, 30)
+            
+        if radioState == 3:
+            oled.blit(truey, 0, 45) 
+    
+    if currState == 5 or currState == 7:
         oled.text("Select Hour:", 0 ,0)
         if time_format == 0:
             oled.text("{:02d}".format(hourScroll), 0, 20 )
@@ -797,10 +1094,31 @@ while ( True ):
             else:
                 oled.text("PM", 15, 20)
     
-    if currState == 6:
+    if currState == 6 or currState == 8:
         oled.text("Select Minute:", 0 ,0)
         oled.text("{:02d}".format(minuteScroll), 0, 20 )
     
+    if currState == 9:
+        oled.text("Select Frequency:", 0, 0)
+        oled.text("{:01d}".format(alarmFreqScroll), 0, 20 )
+        oled.text("00HZ",8,20)
+        
+    if currState == 10:
+        oled.text("Select Volume:", 0, 0)
+        oled.text("{:01d}".format(alarmDutyScroll), 0, 20 )
+        
+    if currState == 11:
+        oled.text("Select Snooze (s):", 0, 0)
+        oled.text("{:03d}".format(snoozeScroll), 0, 20 )
+    
+    if currState == 12:
+        oled.text("Select Frequency:", 0, 0)
+        oled.text("{:.1f}MHz".format(radioScroll), 0, 20 )
+        
+    if currState == 13:
+        oled.text("Select Volume:",0, 0)
+        oled.text("{:02d}".format(volumeScroll), 0, 20 )
+        
 #
 # Draw box below the text
 #
@@ -811,84 +1129,5 @@ while ( True ):
 #
     oled.show()
 
-#
-# display the menu
-#
-#
-# display the menu
-#
-    
-#     print("")
-#     print( "ECE 299 FM Radio Demo Menu" )
-#     print("")
-#     print( "1 - change radio frequency" )
-#     print( "2 - change volume level" )
-#     print( "3 - mute audio" )
-#     print( "4 - read current settings" )
-    
-#     select = input( "Enter menu number > " )
 
-# #
-# # Set radio frequency
-# #
-#     if ( select == "1" ):
-#         Frequency = input( "Enter frequncy in Mhz ( IE 100.3 ) > " )
-
-#         if ( fm_radio.SetFrequency( Frequency ) == True ):
-#             fm_radio.ProgramRadio()
-#         else:
-#             print( "Invalid frequency( Range is 88.0 to 108.0 )" )
-
-# #
-# # Set volume level of radio
-# #
-#     elif ( select == "2" ):
-#         Volume = input( "Enter volume level ( 0 to 15, 15 is loud ) > " )
-        
-#         if ( fm_radio.SetVolume( Volume ) == True ):
-#             fm_radio.ProgramRadio()
-#         else:
-#             print( "Invalid volume level( Range is 0 to 15 )" )
-        
-# #        
-# # Enable mute of radio       
-# #        
-#     elif( select == "3" ):
-#         Mute = input( "Enter mute ( 1 for Mute, 0 for audio ) > " )
-        
-#         if ( fm_radio.SetMute( Mute ) == True ):
-#             fm_radio.ProgramRadio()
-#         else:
-#             print( "Invalid mute setting" )
-
-# #
-# # Display radio current settings
-# #
-#     elif( select == "4" ):
-#         Settings = fm_radio.GetSettings()
-
-#         print( Settings )
-#         print("")
-#         print("Radio Status")
-#         print("")
-
-#         print( "Mute: ", end="" )
-#         if ( Settings[0] == True ):
-#             print( "enabled" )
-#         else:
-#             print( "disabled" )
-
-#         print( "Volume: %d" % Settings[1] )
-
-#         print( "Frequency: %5.1f" % Settings[2] )
-
-#         print( "Mode: ", end="" )
-#         if ( Settings[3] == True ):
-#             print( "stereo" )
-#         else:
-#             print( "mono" )
-
-
-#     else:
-#         print( "Invalid menu option" )
 
