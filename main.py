@@ -82,7 +82,7 @@ alarmState = 0
 radioState = 0
 timeState = 0
 
-hourScroll = 0
+hourScroll = 1
 hourSelect = False
 formatSelect = 0
 minuteScroll = 0
@@ -209,14 +209,14 @@ def SELECThandler(x):
                         
                 
             elif alarmState == 1:
-                hourScroll = 0
+                hourScroll = 1
                 minuteScroll = 0
                 hourSelect = False
                 currState = 7
                 if time_format == 0:
                     rotary.set(0, 0, 1, 23, None, None)
                 else:
-                    rotary.set(1, 0, 1, 12, None, None)
+                    rotary.set(1, 1, 1, 12, None, None)
                 
             elif alarmState == 2:
                 currState = 9
@@ -951,13 +951,13 @@ while ( True ):
         fb3 = framebuf.FrameBuffer(buffer3, 20, 20, framebuf.MONO_HLSB)
         
         if time_format == 0:
-            oled.text("{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds), 0, 0 )
+            oled.text("{:02d}:{:02d}".format(hours, minutes), 0, 0 )
         else:
             if Pm:
                 twelveHrFormat = afternoon
             else:
                 twelveHrFormat = morning
-            oled.text("{:02d}:{:02d}:{:02d}{:02s}".format(hours, minutes, seconds, twelveHrFormat), 0, 0 )
+            oled.text("{:02d}:{:02d}{:02s}".format(hours, minutes, twelveHrFormat), 0, 0 )
         if AlarmToggle:
             oled.text("Alarm:",0, 10)
             
@@ -1128,6 +1128,7 @@ while ( True ):
 # Transfer the buffer to the screen
 #
     oled.show()
+
 
 
 
